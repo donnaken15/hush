@@ -1,0 +1,19 @@
+#!/bin/zsh
+
+[ $# -gt 2 ] && { echo "$0: exceeded proper number of arguments" 1>&2; exit; }
+[ \
+	\( $# -eq 2 -a -e "$1" -a -e "$2" \) -o \
+	\( $# -eq 1 -a -e "$1" \) \
+] || { echo "$0: missing files" 1>&2; exit; }
+
+cmd="xxd"
+args="-g 1 -u --"
+pipe2=--$RANDOM
+touch -- $pipe2 && {
+	[ $# -eq 2 ] && $cmd "$2" || {
+		git show "HEAD~1:./$1" | $cmd $args -
+	}
+} > $pipe2 && {
+	($cmd $args "$1" | git diff --no-index -- - $pipe2);
+	rm -f -- $pipe2
+}

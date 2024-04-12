@@ -1,0 +1,4 @@
+#!/bin/zsh
+cd "$_SHBONK_OLD_CWD"
+[ ${#@} -ne 0 ] && "$@" || "${SHBONK_SHELL:-${SHELL}}"
+# don't know how i should retrieve default on cyg

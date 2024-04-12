@@ -1,0 +1,67 @@
+#!/bin/zsh
+[ $# -eq 1 ] && {
+	echo you must specify more than one file to be deduped
+	echo
+}
+[ $# -lt 2 ] && {
+	echo "dedupe [input files]"
+	echo "- replace multiple unchanging"
+	echo copies of the same files with
+	echo hardlinks to save space
+	return 1
+}
+declare -a hashset
+hashset=()
+declare -a baseset
+baseset=()
+# i feel like i'm missing something, even before
+# i just capped off writing the code for this
+NUL=/dev/null
+wpathfail() { echo $2; }
+fsize() { stat -c "%s" "$1"; }
+dsize() { df --output=source,avail --block-size=M --total | tail -1; } # prints kb
+wpath=wpathfail
+which cygpath 2>$NUL >$NUL && wpath=cygpath || {
+	which wslpath 2>$NUL >$NUL && wpath=wslpath || {
+		# wtf to do here
+		echo No path converter utility found. 1>&2
+	}
+}
+copycount=0
+before=$(dsize)
+for ff in "$@"; do
+	f=$($wpath -u "$ff")
+	if [ -e "$f" ] && {
+		test=($(sha256sum "${f}")) #weird
+		test="${test[1]:1}"
+		# INDEXES START FROM 1, ABSOLUTE CRINGE
+		check=${hashset[(Ie)$test]:-0}
+		[ $check -eq 0 ] && {
+			hashset+=($test)
+			baseset+=("$f")
+			#baseset+=("$(realpath "$f")")
+		} || {
+			base="${baseset[$check]}"
+			[ $(fsize "$f") -eq $(fsize "$base") ] && {
+				copycount=$(($copycount + 1))
+				ln -f "$base" "$f"
+				echo "[${test:0:15}] $(basename "$base") <- $f"
+			} || {
+				echo "$base and $(basename "$f") have matching hashes but different size!!!!" 1>&2
+			}
+		}
+	} || {
+		echo "$f is not a file."
+	}
+done
+after=$(dsize)
+echo Free space:
+echo Before: $before
+echo After : $after
+uniqcount=${#hashset[@]}
+echo Found $uniqcount unique files, $copycount duplicates
+read -rsn
+return 0
+
+
+

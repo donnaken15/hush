@@ -1,0 +1,81 @@
+#!/bin/zsh
+# execute Windows program from WSL shell
+# where Windows paths are present, and
+# converted to normal paths like for compact
+#
+# rename this script to anything besides wsl2exe
+# to act as a proxy to the program you want to execute,
+# as long as it refers to a program existing in PATH,
+# and that windows PATH is added to the WSL instance
+
+# don't append .exe to the command argument
+COMMAND=""
+[ "${0[-7,-1]:l}" = "wsl2exe" ] && {
+	[ $# -eq 0 ] && { echo "Usage: wsl2exe [windows command] [args...]"; exit; }
+	COMMAND="$(basename "$1")"
+	shift
+} || {
+	ALLOW_BUILTINS=0 # ???? *
+	COMMAND="$(basename "$0")"
+}
+declare -a ARGBUILDER
+ARGBUILDER=()
+# i just remembered, this will come from shell, not batch, dummy *
+[ ${ALLOW_BUILTINS:-1} -eq 1 ] && {
+	# (1) check for typed built in, to then turn into cmd /c
+	# reserved names come first, i.e. to run dir.exe from
+	# cygwin in the command line, it must be typed as "dir.exe"
+	# otherwise windows built in is ran
+	CMD_LOWER=${COMMAND:l}
+	()(( $@[(Ie)$CMD_LOWER] )) \
+		assoc cls copy date del dir dpath \
+		echo ftype forfiles mklink pushd \
+		popd set setlocal shift rem rmdir \
+		start time title type ver vol && {
+		got_builtin=1
+		use_cmd=1
+	}
+}
+[ ${got_builtin:-0} -eq 0 ] && {
+	# if above isn't the case
+	# (2) check paths for executables with following extensions
+	j=0
+	for i (com exe bat cmd) {
+		exe="${COMMAND}.${i}"
+		{ command -v "${exe}" &> /dev/null; } &&
+			{ COMMAND="${exe}"; break; }
+	}
+}
+ext="${COMMAND##*.}"
+[ ${ext} = bat -o ${ext} = cmd ] && use_cmd=1
+[ ${use_cmd:-0} -eq 1 ] && {
+	ARGBUILDER+=("/c" "$CMD_LOWER")
+	COMMAND="cmd.exe"
+}
+# detect if running on WSL because I just
+# hardlinked "compact" to here and wanted to
+# use the script on Cygwin
+# oops
+which $pathconv >/dev/null 2>/dev/null && pathconv=wslpath || pathconv=cygpath
+mountpoint=/mnt/
+[ $# -gt 0 ] && for a in "$@"; do
+	ARG="${a}"
+	# convert absolute linux paths to windows paths
+	case "${a}" in
+		# uhhh https://learn.microsoft.com/en-us/windows/wsl/wsl-config#automount-settings
+		$mountpoint*)
+			[ -e "${a}" ] && {
+				# TODO?: recursive check existence of upper and upper path
+				[ -d "$(dirname "${a}")" ] &&
+					ARG="$($pathconv -a -w "$(dirname "$a")/$(basename "$a")$([ -d "$a" ] && echo /)")"
+			}
+		;;
+		# point to rootfs for folders in wsl???
+		/dev/null)
+			# ignore for cygwin programs??
+			ARG="NUL"
+		;;
+	esac
+	ARGBUILDER+=("${ARG}")
+done
+$COMMAND "${ARGBUILDER[@]}"
