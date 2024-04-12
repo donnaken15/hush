@@ -1,0 +1,102 @@
+#!/bin/dash
+# CYGWIN REQUIRED!! (maybe)
+#
+# optimal compact
+# by wesley
+# BECAUSE SOMEHOW IT TAKES MORE SPACE
+# sometimes
+#
+# might've just been created out of
+# the false assumption that it does
+# take up more space but not until
+# the computer is rebooted because
+# everything entered always
+# remains compressed
+
+quiet=0
+
+[ $quiet -eq 0 ] && {
+	echo "[96mOptimal Compact[97m - [92mWesley[0m"
+	echo "[93m/!\\ Make sure there's no writing/deleting operations happening while this runs.[0m"
+	echo
+}
+[ $# -eq 0 ] && { echo "No paths specified, exiting..."; exit 1; }
+
+rc="[0m"; NL=$'\n';
+tc_gr="[37m"; tc_r="[91m";
+tc_g="[92m"; tc_w="[97m";
+# capture groups for compact command output
+cpt="\s\?\([0-9]\+\)\s:\s*\([0-9]\+\)\s=\s[0-9]\+\.[0-9]\+\sto\s1\s\?\([ C]\)\s\?\(.\+\)\$"
+# size of disk that the file is on
+dsize() { echo $(df --output=avail -- "$1" | tail -1); } # prints kb
+#fs() { expr $(du -b -- "$1" | awk '{print $1}') / 1000; } # file size
+fsod() { du -BK -- "$1" | cut -f -1; } # file size
+optc() {
+	size=$(wc -c < "$1")
+	[ $quiet -eq 0 ] && {
+		[ ${size} -eq 0 ] && { echo "$1 has no contents. Skipping..."; return; }
+	}
+	ic=$(compact "$1"|sed -n 5p|sed "s/$cpt/\3/") # compressed (C) or uncompressed ( )
+	[ "$ic" = "C" ] && { ic="U";w="Unc"; } || { ic="C";w="C"; }
+	[ $quiet -eq 0 ] && {
+		echo "${tc_w}${w}ompressing $1${rc}"
+		echo "${tc_w}File size: $(($size/1024))K, on disk: $(fsod "$1")${rc}"
+	}
+	# size before
+	b=$(dsize "$1")
+	compact /$ic "$1" > /dev/null
+	# size after
+	a=$(dsize "$1")
+	revert=0 # if 1, set back to compression state before
+	[ $quiet -eq 0 ] && {
+		echo "${tc_gr}Is this file actually smaller?${rc}"
+		echo "${tc_gr}Free space:${rc}"
+		printf "${tc_w}Before: ${tc_gr}%10dK\n${tc_w}After : ${tc_gr}%10dK${rc}\n" $b $a
+		[ $a -gt $b ] && { s="+";c="${tc_g}"; } || { s="";c="${tc_r}"; }
+		printf "${tc_w}Diff  : ${c}%10sK\n${rc}" "${s}$(($a - $b))"
+		[ $b -gt $a ] && {
+			[ "$ic" = "C" ] && { echo "${tc_r}No.${rc}"; } || { echo "${tc_g}Yes!${rc}";revert=1; }
+		} || {
+			[ "$ic" = "C" ] && { echo "${tc_g}Yes!${rc}"; } || { echo "${tc_r}No.${rc}";revert=1; }
+		}
+	} || {
+		[ $b -gt $a ] && {
+			[ "$ic" = "C" ] && revert=1
+		} || {
+			[ "$ic" = "C" ] && revert=1
+		}
+	}
+	while [ $revert -eq 1 ]; do
+		[ $quiet -eq 0 ] && echo "Reverting compression state..."
+		[ "$ic" = "C" ] && { ic="U"; } || { ic="C"; }
+		b=$(dsize "$1")
+		compact /$ic "$1" > /dev/null
+		a=$(dsize "$1")
+		[ $b -gt $a ] && {
+			[ "$ic" = "C" ] && {
+				[ $quiet -eq 0 ] && echo "ACTUALLY NOT SMALLER!"
+			}; continue;
+		} || break
+	done
+	[ $quiet -eq 0 ] && echo
+}
+optc_d() {
+	find "$1" -mindepth 1 -type f | while IFS= read -r f; do optc "$f"; done
+}
+
+b=$(dsize "$1")
+for f in "$@"; do
+	[ -f "$f" ] &&
+		optc "$f" || {
+		[ -d "$f" ] &&
+			optc_d "$f" || echo "Invalid path or it does not exist: $f"
+	}
+done
+a=$(dsize "$1")
+[ $quiet -eq 0 ] && {
+	echo Overall difference:
+	printf "${tc_w}Before: ${tc_gr}%10dK\n${tc_w}After : ${tc_gr}%10dK${rc}\n" $b $a
+	[ $a -gt $b ] && { s="+";c="${tc_g}"; } || { s="";c="${tc_r}"; }
+	printf "${tc_w}Diff  : ${c}%10sK\n${rc}" "${s}$(($a - $b))"
+	echo Done.
+}
